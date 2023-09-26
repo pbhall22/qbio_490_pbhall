@@ -38,7 +38,7 @@ To set your directory, type setwd("/PATH/TO/DIRECTORY"). This is similar to cd i
 
 ```{r 2.2}
 ## don't run this
-setwd() # (ex: "/Users/peytonhall/Documents/qbio_490_pbhall/week3_R")
+#setwd("/Users/peytonhall/Documents/qbio_490_pbhall/week3_R")
 
 ## for R Notebooks, don't actually do this! Keep reading...
 ```
@@ -125,7 +125,15 @@ SUMOFAGES <- sum(numeric_vector)
   Create four variables named 'name', 'age', 'birthday' (in a MM/DD/YYYY format), and 'three_fav_colors'. Print by writing out the name of each variable. What data types are these (use typeof() to validate)?
 
 ```{r Exercise 3.4}
-## add code here!
+name <- "peyton"
+age <- 20
+birthday <- "04/22/2003"
+three_fav_colors <- c("green", "blue", "yellow")
+
+print(name)
+print(age)
+print(birthday)
+print(three_fav_colors)
 ```
 
 ###### (4) Functions
@@ -159,6 +167,7 @@ list_of_numbers <- c(1, 1, 2, 3, 5, 8, 13, 21)
 ## call functions here
 sum(list_of_numbers)
 
+
 ```
 
 ###### (5) Logic and Control Flow
@@ -185,11 +194,11 @@ sum(list_of_numbers)
 "cat" == "cat" & "dog" == "dog" # prediction: TRUE
 "cat" == "cat" & "fish" == "hamster" # prediction: FALSE
 
-1 < 2 | 3 < 1 # prediction: 
-1 < 2 | 3 < 5 # prediction: 
+1 < 2 | 3 < 1 # prediction: TRUE
+1 < 2 | 3 < 5 # prediction: TRUE
 
 "blue" %in% c("yellow", "red", "blue") &! "happy" %in% c("sad", "angry")
-# prediction: 
+# prediction: TRUE
 ```
 
   "If" statements (along with "else if" and "else" statements) are the most simple control flows to write, and they are also what we will use the majority of the time.
@@ -198,16 +207,14 @@ sum(list_of_numbers)
 
 ```{r Exercise 5.3}
 
-x <- ?
+x <- 10
 if (x>10) {
-  # action
-print("value is greater than 10")
+  print("value is greater than 10")
 } else if (x<10) {
   print("value is less than 10")
-  # action
 } else {
-  # action
-  print("value is equal to 10 ")
+  print("value is equal to 10")
+  print("Success")
 }
 ```
 
@@ -227,6 +234,8 @@ output <- ifelse(expression1, x, ifelse(expression2, y, ifelse(expression3, z, a
 ```{r Exercise 5.5}
 
 new_list <- c("starbucks", "elephant", 232, "magenta", -10)
+
+#predict D and E
 
 if (7.5 %in% new_list) {
   print("A")
@@ -255,9 +264,10 @@ if (7.5 %in% new_list) {
   While loops are like if statements that repeat multiple times until the condition is no longer true. The syntax is as follows:
 
 ```{r Exercise 6.1 - syntax of a while loop}
-while (# condition) {
-  # do something
-  # update condition
+x <- 1
+while (x <= 5) {
+  print(x)
+  x <- x + 1
 }
 ```
 
@@ -274,18 +284,24 @@ while (i < 10) {
   Starting with x = 0, write a while loop that returns the mean of 1, 10, and x until that average is greater than 10. Each time the loop runs, increment x by 1.
 
 ```{r Exercise 6.3}
-x = 0
-my_list <- c(1, 10, x)
-mean <- mean(my_list)
-while {
+x <- 0
+average <- 0
+while (average <= 10) {
+  average <- mean(c(1, 10, x))
+  x <- x + 1
 }
+
+cat("Final average:", average, "\n")
+cat("Value of x when average is greater than 10:", x, "\n")
 ```
 
   The other type of commonly used loop is a for loop. In R and Python, you can think of a for loop as doing something for each element in some list. The syntax is as follows:
 
 ```{r 6.4 - syntax of a for loop}
-for (i in list) {
-  # do something
+i <- 1
+list <- c(1, 2, 3)
+for (i) {
+    loop(i)
 }
 ```
 
@@ -293,8 +309,8 @@ for (i in list) {
 
 ```{r Exercise 6.5}
 list <- c(2, 4, 6, 8)
-
-for (element in list) { # note that I can call "element" whatever I want, it like a temporary variable that stores the list's item
+{
+for (element in list) 
   print (element * 2)
 }
 ```
@@ -303,6 +319,10 @@ for (element in list) { # note that I can call "element" whatever I want, it lik
 
 ```{r Exercise 6.6}
 list <- c(1, 5, 20, 0)
+{
+  for (element in list)
+    print (element ^3)
+}
 
 # write loop here
 ```
@@ -319,7 +339,7 @@ for (i in 1:10) {
 
 ```{r Exercise 6.8}
 for (i in -7:7) {
-  print (   i)
+  print ( i)
 }
 
 ```
@@ -331,7 +351,7 @@ for (i in -7:7) {
 ```{r Exercise 6.9}
 list <- c(1, 10, 100) 
 
-# using a loop
+#using a loop
 sum_loop <- 0
 for (i in list) {
   sum_loop = sum_loop + i
@@ -405,7 +425,7 @@ Let's explore the built in mtcars data frame to learn about this crucial data ty
 First, load in the data frame by running the following line of code. "mtcars" will then show up under "Data" in your environment panel.
 
 ```{r Exercise 8.1}
-data(mtcars)
+mtcars
 ```
 
 The easiest way to view a data frame is to simply click on it in your environment tab! This will open up the matrix in a new tab. You can then explore the data visually.
@@ -514,13 +534,16 @@ mtcars_copy <- mtcars[1:32, -9]
 Use the above syntax to save a copy of the mtcars data without the "am" column. Remember to use colnames() to find the column number of "am". Also recall that to select row/columns to drop (hence selecting everything else), you can use "-index #".
 
 ```{r Exercise 9.4}
-cars <- mtcars
-cars
-
-View your new mtcars copy data frame to check that the "am" column was dropped.
-
-```{r Exercise 9.5}
+colnames(mtcars)
 mtcars_copy <- mtcars[1:32, -9]
+
+
+
+#View your new mtcars copy data frame to check that the "am" column was dropped.
+
+```
+{r Exercise 9.5}
+
 View(mtcars_copy)
 ```
 
@@ -537,6 +560,8 @@ install.packages("package")
 }
 
 library(package) # you need to load in a package in every file that uses it (it's good practice to run all package related lines at the top of your file)
+
+
 ```
 
   In your TCGA Data Download assignment, all of the required packages for our course have already been installed. From this point on, to use a package, you only need to run library(package).
