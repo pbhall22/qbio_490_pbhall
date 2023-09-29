@@ -1,0 +1,173 @@
+---
+title: "Intro to MAF"
+author: Nicole Black
+date: 09/27/23
+updated: 09/17/23
+---
+
+***Deliverables***
+-Upload this R Notebook to your GitHub and submit the link to your Repo on BB.
+-Include any graphs or figures created in this assignment in the folder with your R notebook with descriptive file names.
+
+Since this is an optional partner activity, it is okay if your answers are the same as your partner’s as long as everyone understands it and could explain it in their own words if asked. Each person must individually push their code to Github. *At the top of your R Notebook, write the name of you and your partner(s) as a comment.*
+
+***Complete the following coding activity and answer any following questions as comments in your R Notebook***
+
+In MAF_Tutorial.Rmd, you looked at how to analyze mutation data in terms of clinical variables as well as mutation status. In this assignment, you will need to combine the two skills to demonstrate your understanding of categorical variables and R data structures.
+
+*Pre-Assignment*
+Load all necessary packages, read in the clinical data .csv file you have in your analysis_data folder, and instantiate the MAF_object.
+```{r}
+knitr::opts_knit$set(root.dir = normalizePath("/Users/peytonhall/documents/qbio_490_pbhall/analysis_data")) 
+
+library(ggplot2)
+library(TCGAbiolinks)
+library(maftools)
+
+clinical <- read.csv("/Users/peytonhall/documents/qbio_490_pbhall/analysis_data/brca_clinical_data.csv")
+
+colnames(clinical)[ colnames(clinical) == "bcr_patient_barcode" ] <- "Tumor_Sample_Barcode"
+
+write.csv(clinical, "/Users/peytonhall/documents/qbio_490_pbhall/analysis_data/brca_clinical_data.csv", row.names = FALSE)
+
+maf_query <- GDCquery(
+   project= "TCGA-BRCA",
+   data.category = "Simple Nucleotide Variation", 
+   access = "open", 
+   data.type = "Masked Somatic Mutation", 
+   workflow.type = "Aliquot Ensemble Somatic Variant Merging and Masking")
+
+#GDCdownload(maf_query)
+
+maf <- GDCprepare(maf_query)
+   
+maf_object <- read.maf(maf = maf,
+                       clinicalData = clinical,
+                       isTCGA = TRUE)
+```
+
+
+*1*
+Choose a clinical variable (or any variable from clin_rad or clin_drug) to separate your populations into two different groups and rewrite the column or create a new column with that variable as a factor. ***Do not use age or vital_status as your clinical variable.*** Hint: if your variable is continuous, you will need to determine your own cutoffs for the different levels of the factor. If your variable is categorical and has more than two possible values, choose the two that are the most common.
+```{r}
+
+age_NA_mask <- !is.na(maf_object@clinical.data$age_at_diagnosis)
+
+under60_mask <- ifelse(maf_object@clinical.data$age_at_diagnosis < 60, T, F)
+over60_mask <- ifelse(maf_object@clinical.data$age_at_diagnosis >= 60, T, F)
+
+maf_object@clinical.data$age <- over60_mask
+maf_object@clinical.data$age <- ifelse(maf_object@clinical.data$age == "TRUE","Old","Young")
+
+
+maf_object@clinical.data$age <- factor(maf_object@clinical.data$age, levels= c("Old", "Young"))
+
+
+```
+
+
+*2*
+Create a co-oncoplot with the top 10-20 (you choose) most mutated genes for the two groups. Pick one that has a large discrepancy in % mutated or type of mutations between the groups and research it. 
+Research it. What is the gene used for? Can you think of any reason for the discrepancy?
+```{r}
+Over60_barcode<- maf_object@clinical.data$Tumor_Sample_Barcode[under60_mask]
+Under60_barcode<- maf_object@clinical.data$Tumor_Sample_Barcode[over60_mask]
+
+Over60_maf<- subsetMaf(maf=maf_object,
+                  tsb=Over60_barcode)
+
+Under60_maf<- subsetMaf(maf=maf_object,
+                  tsb=Under60_barcode)
+
+#Oncoplot
+m1.genes = getGeneSummary(Over60_maf)[1:10]
+m2.genes = getGeneSummary(Under60_maf)[1:10]
+mdt = merge(m1.genes[,.(Hugo_Symbol, MutatedSamples)], m2.genes[,.(Hugo_Symbol, MutatedSamples)], by = 'Hugo_Symbol', all = TRUE)
+mdt$MutatedSamples.x[is.na(mdt$MutatedSamples.x)] = 0
+mdt$MutatedSamples.y[is.na(mdt$MutatedSamples.y)] = 0
+mdt$max = apply(mdt[,.(MutatedSamples.x, MutatedSamples.y)], 1, max)
+mdt = mdt[order(max, decreasing = TRUE)]
+
+coOncoplot(m1=Over60_maf,
+           m2=Under60_maf,
+           m1Name = "Patients diagnosed after 60 y/o",
+           m2Name = "Patients diagnosed before 60 y/o",
+           borderCol = NA,
+           titleFontSize = 1,
+           genes = mdt$Hugo_Symbol)
+#ggsave("/Users/peytonhall/documents/qbio_490_pbhall/coOncoplot_GENE_GENE_BRCA")
+
+
+#MUC16: "MUC16 is a large cell surface molecule that plays a protective role at the apical surface of normal epithelia. Although its increased expression should improve mucosal barrier and protective functions against infection, MUC16 is aberrantly overexpressed during progression of several malignancies. Several studies have demonstrated that MUC16 or CA125 is not only a biomarker for ovarian cancer, but also plays role in tumor progression and metastasis. Due to its involvement in cancer aggressiveness and progression, MUC16 has emerged as a promising candidate for the development of targeted therapies." Aithal A, Rauth S, Kshirsagar P, Shah A, Lakshmanan I, Junker WM, Jain M, Ponnusamy MP, Batra SK. MUC16 as a novel target for cancer therapy. Expert Opin Ther Targets. 2018 Aug;22(8):675-686. doi: 10.1080/14728222.2018.1498845. Epub 2018 Jul 26. PMID: 29999426; PMCID: PMC6300140.
+#Possible reason for discrepancy: As mentioned, MUC16 plays a significant protective role at the apical surface of epithelia. However when over-expressed in breast cancer, oncogenic cell cycle progression (G2-M) and cell survival via JAK2/STAT3 signaling pathway are promoted. As a result, an increased expression of this gene makes sense in this context. 
+```
+
+*3*
+Create a contingency table with your variable and chosen gene. Run a Fisher’s Exact Test between presence of mutations for that gene and your clinical variable. Create and save a mosaic plot. 
+Interpret the output of the Fisher’s Exact Test in terms of the odds ratio and p-value.
+```{r}
+MUC16_mask <- ifelse(maf_object@data$Hugo_Symbol == "MUC16", T, F)
+MUC_patients <- maf_object@data$Tumor_Sample_Barcode[MUC16_mask]
+length(MUC_patients)
+
+maf_object@clinical.data$muc16 <- maf_object@clinical.data$Tumor_Sample_Barcode %in% MUC_patients
+maf_object@clinical.data$muc16 <- ifelse(maf_object@clinical.data$muc16 == "TRUE", "Mutation", "No Mutation")
+maf_object@clinical.data$muc16 <- factor(maf_object@clinical.data$muc16, levels = c("Mutation", "No Mutation"))
+
+print(maf_object@clinical.data$age_at_diagnosis)     
+print(maf_object@clinical.data$muc16)
+                                                                                 
+contig <- table(maf_object@clinical.data$age, maf_object@clinical.data$muc16)
+mosaicplot(contig)
+
+fisher_test = fisher.test(contig)
+fisher_test
+fisher_test$p.value
+
+#fisherstestresults
+#The odds ratio tells us the strength of association between an exposure and an outcome. In this case, the exposure is the gene mutation status. Since the odds ratio is above one, this means there is an association between MUC16 mutations and cancer patient diagnoses. However, the p-value (significance) is above 0.05%, which is the p-value of statistical signifiance. As a result, one can conclude there is an association between the gene mutations and cancer diagnoses, but not a statistically significant one. 
+```
+
+*4*
+Subset your maf_object based on your chosen clinical variable and create a co-lollipop plot of your chosen gene divided between the two different clinical variable possibilities. Include descriptive names on your plot. 
+Do you notice any difference in terms of mutations (e.g. sites, types, number) between the two populations?
+
+```{r}
+lollipopPlot2(m1= Over60_maf,
+              m2= Under60_maf,
+              m1_name = "Diagnosed after 60",
+              m2_name = "Diagnosed before 60",
+              gene="MUC16")
+#ggsave("/Users/peytonhall/documents/qbio_490_pbhall/lollipop_MUC16_BRCA")
+#Despite having a smaller sample size (446 vs 521), those diagnosed before 60 had more overall mutations than those diagnosed after 60 (11.66% vs 9.02% respectively), along with more frameshift deletions in this group. Overall, the majority of mutations were missense mutations. 
+```
+*5*
+Create your Overall_Survival_Status column and create a mafSurvival KM plot based on mutations in your chosen gene.
+Does there seem to be a difference? Hypothesize why or not based on the other analysis you did with the gene above.
+
+```{r}
+maf_object@clinical.data$Overall_Survival_Status <- ifelse(maf_object@clinical.data$vital_status == 'Alive', T, F) 
+
+mafSurvival(maf = maf_object,
+            genes = "MUC16",
+            time = "last_contact_days_to", 
+            Status = "Overall_Survival_Status", 
+            isTCGA = TRUE)
+
+#from intro to clinical data?
+survival_object <- Surv(time = cleaned_clinic$survival_time,
+                        event = cleaned_clinic$death_event)
+
+fit_object <- survfit(survival_object ~ age_category, data = cleaned_clinic)
+
+survplot <- ggsurvplot(fit_object,
+                       pval=TRUE,
+                       ggtheme = theme(plot.margin = unit(c(1,1,1,1), "cm")),
+                       legend = 'right')
+
+KM_plot <- survplot$plot + theme_bw() + theme(axis.title = element_text(size=20), 
+                                              axis.text = element_text(size=16),
+                                              legend.title = element_text(size=14),
+                                              legend.text = element_text(size=12))
+#The mutant gene has a more scattered, but slightly higher survival probability likely due to the cancer cells that activate these genes being immortal, not going through normall cell processes of repairing themselves or dying. 
+```
