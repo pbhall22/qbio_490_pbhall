@@ -1,0 +1,235 @@
+---
+title: "R Review Project"
+name: Peyton Hall
+editor_options: 
+  chunk_output_type: console
+---
+```{r}
+knitr::opts_knit$set(root.dir = normalizePath("/Users/peytonhall/documents/qbio_490_pbhall/analysis_data")) 
+```
+
+```{r}
+library(survival)
+library(survminer)
+library(SummarizedExperiment)
+library(ggplot2)
+
+#SKCM rna_query download
+rna_query <- GDCquery(project ="TCGA-SKCM",
+                      data.category = "Transcriptome Profiling",
+                      data.type = "Gene Expression Quantification",
+                      workflow.type = "STAR - Counts")
+#GDCdownload(rna_query)
+rna_se <- GDCprepare(rna_query)
+
+skcm_clinical <- rna_se@colData
+skcm_clinical <- as.data.frame(skcm_clinical)
+colnames(skcm_clinical)[ colnames(skcm_clinical) == "patient" ] <- "Tumor_Sample_Barcode"
+
+#maf 
+maf_query <- GDCquery(
+   project= "TCGA-SKCM",
+   data.category = "Simple Nucleotide Variation", 
+   access = "open", 
+   data.type = "Masked Somatic Mutation", 
+   workflow.type = "Aliquot Ensemble Somatic Variant Merging and Masking")
+
+GDCdownload(maf_query)
+
+maf <- GDCprepare(maf_query)
+   
+maf_object <- read.maf(maf = maf,
+                       clinicalData = skcm_clinical,
+                       isTCGA = TRUE)
+
+rna_counts <- rna_se@assays@data$unstranded
+rna_counts <- as.data.frame(rna_counts)
+
+rna_genes<- rna_se@rowRanges@elementMetadata
+rna_genes<- as.data.frame(rna_genes)
+
+rownames(rna_genes)<- rna_genes$gene_id
+rownames(rna_counts)<- rna_genes$gene_id
+colnames(rna_counts)<- rownames(skcm_clinical)
+
+#clin_query
+
+clin_query <- GDCquery(project = "TCGA-SKCM",
+              data.category = "Clinical",
+              data.type = "Clinical Supplement",
+              data.format = 'BCR Biotab')
+
+GDCdownload(clin_query)
+clinical.BCRtab.all <- GDCprepare(clin_query)
+
+#clinic <- clinical.BCRtab.all$clinical_patient_skcm[-c(1,2),]
+
+rad<- clinical.BCRtab.all$clinical_radiation_skcm[-c(1, 2), ]
+drug<- clinical.BCRtab.all$clinical_drug_skcm[-c(1, 2), ]
+
+colnames(clinic)[ colnames(clinic) == "bcr_patient_barcode" ] <- "Tumor_Sample_Barcode"
+```
+
+```{r}
+#Difference in survival between metastatic and nonmetastatic patients
+tissue_mask <- ifelse(skcm_clinical$definition == 'Metastatic', T, ifelse(skcm_clinical$definition == "Primary solid Tumor", T, F))
+skcm_clinical <- skcm_clinical[tissue_mask, ]
+skcm_metastatic_mask <- ifelse(skcm_clinical$definition == "Metastatic", T, F)
+skcm_clinical$metastatic <- skcm_metastatic_mask
+skcm_clinical$metastatic <- factor(skcm_clinical$metastatic)
+
+skcm_clinical$survival_time <- ifelse(is.na(skcm_clinical$days_to_death),
+                                       skcm_clinical$days_to_last_follow_up,
+                                       skcm_clinical$days_to_death)
+
+skcm_clinical$survival_time <- as.numeric(skcm_clinical$survival_time)
+
+skcm_clinical$death_event <- ifelse(skcm_clinical$vital_status == "Dead", TRUE, FALSE)
+
+survival_object <- Surv(time = skcm_clinical$survival_time,
+                        event = skcm_clinical$death_event)
+
+fit_object <- survfit(survival_object ~ metastatic, data = skcm_clinical)
+
+survplot <- ggsurvplot(fit_object,
+                       pval=TRUE,
+                       ggtheme = theme(plot.margin = unit(c(1,1,1,1), "cm")),
+                       legend = 'right')
+
+KM_plot <- survplot$plot + theme_bw() + theme(axis.title = element_text(size=20), 
+                                              axis.text = element_text(size=16),
+                                              legend.title = element_text(size=14),
+                                              legend.text = element_text(size=12))
+
+KM_plot
+```
+
+```{r}
+#Mutation differences between metastatic and nonmetastatic for multiple genes
+metastatic_barcode <-  skcm_clinical$Tumor_Sample_Barcode[skcm_metastatic_mask]
+nonmetastatic_barcode <- skcm_clinical$Tumor_Sample_Barcode[!skcm_metastatic_mask ]
+
+maf_metastatic <- subsetMaf(maf=maf_object,
+                  tsb=metastatic_barcode)
+
+maf_nonmetastatic <- subsetMaf(maf=maf_object,
+                  tsb=nonmetastatic_barcode)
+
+#Oncoplot
+m1.genes = getGeneSummary(maf_metastatic)[1:10]
+m2.genes = getGeneSummary(maf_nonmetastatic)[1:10]
+mdt = merge(m1.genes[,.(Hugo_Symbol, MutatedSamples)], m2.genes[,.(Hugo_Symbol, MutatedSamples)], by = 'Hugo_Symbol', all = TRUE)
+mdt$MutatedSamples.x[is.na(mdt$MutatedSamples.x)] = 0
+mdt$MutatedSamples.y[is.na(mdt$MutatedSamples.y)] = 0
+mdt$max = apply(mdt[,.(MutatedSamples.x, MutatedSamples.y)], 1, max)
+mdt = mdt[order(max, decreasing = TRUE)]
+
+coOncoplot(m1=maf_metastatic,
+           m2=maf_nonmetastatic,
+           m1Name = "Metastatic patients",
+           m2Name = "Nonmetastatic patients",
+           borderCol = NA,
+           titleFontSize = 1,
+           genes = mdt$Hugo_Symbol)
+#ggsave("/Users/peytonhall/documents/qbio_490_pbhall/coOncoplot_GENE_GENE_BRCA")
+```
+```{r}
+#Mutation difference for gene of interest 
+lollipopPlot2(m1= maf_metastatic,
+              m2= maf_nonmetastatic,
+              m1_name = "Metastatic",
+              m2_name = "Nonmetastatic",
+              gene="DNAH7")
+
+```
+
+```{r}
+#Cooccurence or mutual exclusion of common gene mutations: one for metastatic, one for nonmetastatic 
+somaticInteractions(maf = maf_metastatic,
+  top = 10,
+  pvalue = c(0.05, 0.1))
+
+somaticInteractions(maf = maf_nonmetastatic,
+  top = 10,
+  pvalue = c(0.05, 0.1))
+```
+
+```{r fig.height=10}
+#diff expression between metastatic and nonmetastatic controlling for treatment effects, race, gender, vital status
+library(DESeq2)
+
+#one hot for treatments
+#rad
+skcm_clinical$radiation <- ifelse(skcm_clinical$Tumor_Sample_Barcode %in% rad$bcr_patient_barcode, 1, 0) 
+#drug
+chemo_mask <- ifelse(drug$pharmaceutical_therapy_type == "Chemotherapy", T, F) 
+chemo_drug <- drug[chemo_mask,] 
+skcm_clinical$chemo <- ifelse(skcm_clinical$Tumor_Sample_Barcode %in% chemo_drug$bcr_patient_barcode, 1, 0) 
+
+immuno_mask <- ifelse(drug$pharmaceutical_therapy_type == "Immunotherapy", T, F) 
+immuno_drug <- drug[immuno_mask,] 
+skcm_clinical$immuno <- ifelse(skcm_clinical$Tumor_Sample_Barcode %in% immuno_drug$bcr_patient_barcode, 1, 0) 
+
+vaccine_mask <- ifelse(drug$pharmaceutical_therapy_type == "Vaccine", T, F) 
+vaccine_drug <- drug[vaccine_mask,] 
+skcm_clinical$vaccine <- ifelse(skcm_clinical$Tumor_Sample_Barcode %in% vaccine_drug$bcr_patient_barcode, 1, 0) 
+
+tmol_mask <- ifelse(drug$pharmaceutical_therapy_type == "Targeted Molecular therapy", T, F) 
+tmol_drug <- drug[tmol_mask,] 
+skcm_clinical$tmol <- ifelse(skcm_clinical$Tumor_Sample_Barcode %in% tmol_drug$bcr_patient_barcode, 1, 0) 
+
+#control for vital status, gender, race
+skcm_clinical$vital_status <- factor(skcm_clinical$vital_status)
+skcm_clinical$gender <- factor(skcm_clinical$gender)
+skcm_clinical$race <- factor(skcm_clinical$race)
+
+#control for treatments
+skcm_clinical$radiation <- factor(skcm_clinical$radiation)
+skcm_clinical$chemo <- factor(skcm_clinical$chemo)
+skcm_clinical$immuno <- factor(skcm_clinical$immuno)
+skcm_clinical$vaccine <- factor(skcm_clinical$vaccine)
+skcm_clinical$tmol <- factor(skcm_clinical$tmol)
+
+#mask race and vital status
+race_mask <- ifelse(skcm_clinical$race == "not reported", F, T)
+skcm_clinical <- skcm_clinical[race_mask, ]
+rna_counts <- rna_counts[ ,race_mask]
+
+vital_mask <- ifelse(skcm_clinical$vital_status == "Not Reported", F, T)
+skcm_clinical <- skcm_clinical[vital_mask, ]
+rna_counts <- rna_counts[ ,vital_mask]
+
+#mask for low counts
+count_mask <- ifelse(rowSums(rna_counts) <20, F, T)
+rna_genes <- rna_genes[count_mask, ]
+rna_counts <- rna_counts[count_mask, ]
+
+#debugged with Andrea - 
+rna_counts<- rna_counts[ , -c(461, 462)]
+
+dds <- DESeqDataSetFromMatrix(countData = rna_counts,
+                             colData = skcm_clinical,
+                             design = ~vital_status + gender + race + immuno + chemo + radiation + vaccine + tmol + metastatic)
+
+#?DESeq
+#dds_obj <- DESeq(dds) 
+
+?resultsNames
+resultsNames(dds_obj)  
+
+results <- results(dds_obj, format = "DataFrame", contrast = c("definition", "Metastatic", "Primary solid Tumor")
+
+                   
+if (!require("EnhancedVolcano", quietly = TRUE))
+  BiocManager::install("EnhancedVolcano")
+library(EnhancedVolcano)
+
+EnhancedVolcano(results,
+                lab = rownames(results),
+                x = 'log2FoldChange',
+                y = 'pvalue')                 
+                  
+                   
+```
+
+
